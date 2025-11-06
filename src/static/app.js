@@ -28,7 +28,12 @@ document.addEventListener("DOMContentLoaded", () => {
         let participantsHTML = '<div class="participants">';
         participantsHTML += '<h5>Participants</h5>';
         if (participants.length) {
-          participantsHTML += '<ul>' + participants.map(p => `<li>${p}</li>`).join('') + '</ul>';
+          participantsHTML += '<ul>' + participants.map(p => `
+            <li>
+              <span class="participant-email">${p}</span>
+              <button class="remove-participant" data-activity="${name}" data-email="${p}" title="Remove participant">✖</button>
+            </li>
+          `).join('') + '</ul>';
         } else {
           participantsHTML += '<p class="no-participants">No participants yet</p>';
         }
@@ -38,9 +43,70 @@ document.addEventListener("DOMContentLoaded", () => {
           <h4>${name}</h4>
           <p>${details.description}</p>
           <p><strong>Schedule:</strong> ${details.schedule}</p>
-          <p><strong>Availability:</strong> ${spotsLeft} spots left</p>
+          <p class="availability"><strong>Availability:</strong> ${spotsLeft} spots left</p>
           ${participantsHTML}
         `;
+
+        // Attach handlers to remove buttons inside this card
+        activityCard.querySelectorAll('.remove-participant').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const email = btn.dataset.email;
+            const activityName = btn.dataset.activity;
+
+            try {
+              const res = await fetch(`/activities/${encodeURIComponent(activityName)}/participants?email=${encodeURIComponent(email)}`, {
+                method: 'DELETE'
+              });
+
+              const data = await res.json();
+              if (res.ok) {
+                // Remove the list item from the DOM
+                const li = btn.closest('li');
+                if (li) li.remove();
+
+                // Update availability display (increase spots left by 1)
+                const availabilityEl = activityCard.querySelector('.availability');
+                if (availabilityEl) {
+                  // Parse current number from text and increment
+                  const match = availabilityEl.textContent.match(/(\d+) spots left/);
+                  if (match) {
+                    const current = parseInt(match[1], 10);
+                    availabilityEl.innerHTML = `<strong>Availability:</strong> ${current + 1} spots left`;
+                  }
+                }
+
+                // If list becomes empty, show placeholder text
+                const ul = activityCard.querySelector('.participants ul');
+                if (!ul || ul.children.length === 0) {
+                  const partDiv = activityCard.querySelector('.participants');
+                  if (partDiv) {
+                    partDiv.querySelector('ul')?.remove();
+                    const noP = document.createElement('p');
+                    noP.className = 'no-participants';
+                    noP.textContent = 'No participants yet';
+                    partDiv.appendChild(noP);
+                  }
+                }
+
+                // Optionally show a small message
+                messageDiv.textContent = data.message || 'Participant removed';
+                messageDiv.className = 'info';
+                messageDiv.classList.remove('hidden');
+                setTimeout(() => messageDiv.classList.add('hidden'), 4000);
+              } else {
+                messageDiv.textContent = data.detail || 'Failed to remove participant';
+                messageDiv.className = 'error';
+                messageDiv.classList.remove('hidden');
+              }
+            } catch (err) {
+              console.error('Error removing participant:', err);
+              messageDiv.textContent = 'Failed to remove participant. Please try again.';
+              messageDiv.className = 'error';
+              messageDiv.classList.remove('hidden');
+            }
+          });
+        });
 
         activitiesList.appendChild(activityCard);
 
@@ -74,6 +140,9 @@ document.addEventListener("DOMContentLoaded", () => {
       const result = await response.json();
 
       if (response.ok) {
+        // Refresh activities so the new participant appears in the UI
+        await fetchActivities();
+
         messageDiv.textContent = result.message;
         messageDiv.className = "success";
         signupForm.reset();
